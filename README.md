@@ -1,4 +1,4 @@
-# claude-template
+# Claude Template
 
 [![Tests](https://github.com/lukehollenback/claude-template/actions/workflows/tests.yml/badge.svg)](https://github.com/lukehollenback/claude-template/actions/workflows/tests.yml)
 
