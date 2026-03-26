@@ -135,10 +135,11 @@ cmd_list_profiles() {
 
 cmd_init() {
   local target_dir=""
-  local profiles=()
+  local profiles_csv=""
   local no_profiles=false
 
-  # Parse arguments.
+  # Parse arguments. Build a comma-separated profile string directly
+  # to avoid bash 3.x issues with empty arrays under set -u.
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --profile)
@@ -147,7 +148,11 @@ cmd_init() {
           exit 1
         fi
         shift
-        profiles+=("$1")
+        if [[ -n "$profiles_csv" ]]; then
+          profiles_csv="$profiles_csv,$1"
+        else
+          profiles_csv="$1"
+        fi
         ;;
       --no-profiles)
         no_profiles=true
@@ -181,7 +186,7 @@ cmd_init() {
   fi
 
   # Interactive profile selection if no --profile and no --no-profiles.
-  if [[ ${#profiles[@]} -eq 0 && "$no_profiles" == false ]]; then
+  if [[ -z "$profiles_csv" && "$no_profiles" == false ]]; then
     local available
     available="$(discover_profiles)"
     if [[ -n "$available" ]]; then
@@ -203,7 +208,11 @@ cmd_init() {
           local selected
           selected="$(echo "$profile_list" | sed -n "${num}p")"
           if [[ -n "$selected" ]]; then
-            profiles+=("$selected")
+            if [[ -n "$profiles_csv" ]]; then
+              profiles_csv="$profiles_csv,$selected"
+            else
+              profiles_csv="$selected"
+            fi
           fi
         done
       fi
@@ -211,22 +220,17 @@ cmd_init() {
   fi
 
   # Validate requested profiles exist.
-  if [[ ${#profiles[@]} -gt 0 ]]; then
+  if [[ -n "$profiles_csv" ]]; then
     local available
     available="$(discover_profiles)"
-    for profile in "${profiles[@]}"; do
+    IFS=',' read -ra requested <<< "$profiles_csv"
+    for profile in "${requested[@]}"; do
       if ! echo "$available" | grep -qx "$profile"; then
         echo "ERROR: Profile '$profile' not found." >&2
         echo "Available profiles: $(echo "$available" | tr '\n' ', ' | sed 's/,$//')" >&2
         exit 1
       fi
     done
-  fi
-
-  # Build comma-separated profile string.
-  local profiles_csv=""
-  if [[ ${#profiles[@]} -gt 0 ]]; then
-    profiles_csv="$(IFS=','; echo "${profiles[*]}")"
   fi
 
   # Create directory structure.
@@ -246,14 +250,17 @@ cmd_init() {
   fi
 
   # Copy profile files.
-  for profile in "${profiles[@]}"; do
-    while IFS= read -r rel_path; do
-      local src="$TEMPLATE_DIR/$rel_path"
-      local dst="$target_dir/$rel_path"
-      mkdir -p "$(dirname "$dst")"
-      cp "$src" "$dst"
-    done <<< "$(profile_files "$profile")"
-  done
+  if [[ -n "$profiles_csv" ]]; then
+    IFS=',' read -ra profile_list <<< "$profiles_csv"
+    for profile in "${profile_list[@]}"; do
+      while IFS= read -r rel_path; do
+        local src="$TEMPLATE_DIR/$rel_path"
+        local dst="$target_dir/$rel_path"
+        mkdir -p "$(dirname "$dst")"
+        cp "$src" "$dst"
+      done <<< "$(profile_files "$profile")"
+    done
+  fi
 
   # Write config.
   write_config "$target_dir" "$profiles_csv"
