@@ -244,6 +244,159 @@ cmd_init() {
   echo "Initialized $target_dir with profiles: ${profiles_csv:-none}."
 }
 
+# Read a value from the .claude-template config.
+# Args: config_file, key.
+read_config() {
+  local config_file="$1" key="$2"
+  grep "^${key}=" "$config_file" 2>/dev/null | head -1 | cut -d= -f2-
+}
+
+# Read a checksum from config.
+# Args: config_file, relative_path.
+read_checksum() {
+  local config_file="$1" rel_path="$2"
+  # Escape special regex characters in the path for grep.
+  local escaped_path
+  escaped_path="$(printf '%s' "$rel_path" | sed 's/[.[\*^$()+?{|]/\\&/g')"
+  grep "^checksum:${escaped_path}=" "$config_file" 2>/dev/null | head -1 | \
+    cut -d= -f2-
+}
+
+# Update or add a checksum in the config.
+# Args: config_file, relative_path, new_hash.
+update_checksum() {
+  local config_file="$1" rel_path="$2" new_hash="$3"
+  # Escape special regex characters in the path for sed matching.
+  local escaped_path
+  escaped_path="$(printf '%s' "$rel_path" | sed 's/[.[\*^$()+?{|]/\\&/g')"
+  if grep -q "^checksum:${escaped_path}=" "$config_file" 2>/dev/null; then
+    # Use a temp file for portability (sed -i differs across platforms).
+    local tmp
+    tmp="$(mktemp)"
+    sed "s|^checksum:${rel_path}=.*|checksum:${rel_path}=${new_hash}|" \
+      "$config_file" > "$tmp"
+    mv "$tmp" "$config_file"
+  else
+    echo "checksum:${rel_path}=${new_hash}" >> "$config_file"
+  fi
+}
+
+# Resolve the template repo for an existing project.
+# Args: target_dir.
+resolve_template_repo() {
+  local target_dir="$1"
+  local config_file="$target_dir/.claude-template"
+
+  # 1. Config file value.
+  local repo
+  repo="$(read_config "$config_file" "template_repo")"
+  if [[ -n "$repo" && -d "$repo/template" ]]; then
+    echo "$repo"
+    return
+  fi
+
+  # 2. Environment variable.
+  if [[ -n "${CLAUDE_TEMPLATE_DIR:-}" && -d "$CLAUDE_TEMPLATE_DIR/template" ]]; then
+    echo "$CLAUDE_TEMPLATE_DIR"
+    return
+  fi
+
+  # 3. Fail.
+  echo "ERROR: Cannot find template repo." >&2
+  echo "Set template_repo in .claude-template or \$CLAUDE_TEMPLATE_DIR." >&2
+  exit 1
+}
+
+cmd_sync() {
+  local target_dir=""
+  local force=false
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --force) force=true ;;
+      -*) echo "Unknown option: $1" >&2; exit 1 ;;
+      *) target_dir="$1" ;;
+    esac
+    shift
+  done
+
+  target_dir="${target_dir:-.}"
+  local config_file="$target_dir/.claude-template"
+
+  if [[ ! -f "$config_file" ]]; then
+    echo "ERROR: No .claude-template found in $target_dir." >&2
+    echo "Run 'claude-template init' first." >&2
+    exit 1
+  fi
+
+  # Resolve template repo (may differ from REPO_ROOT if run from installed location).
+  local template_repo
+  template_repo="$(resolve_template_repo "$target_dir")"
+  local tmpl_dir="$template_repo/template"
+
+  local profiles
+  profiles="$(read_config "$config_file" "profiles")"
+
+  local skipped=0
+  local updated=0
+  local added=0
+
+  # Build list of expected managed files.
+  local expected_files
+  expected_files="$(TEMPLATE_DIR="$tmpl_dir" managed_files_for_profiles "$profiles")"
+
+  while IFS= read -r rel_path; do
+    [[ -n "$rel_path" ]] || continue
+    local src="$tmpl_dir/$rel_path"
+    local dst="$target_dir/$rel_path"
+
+    if [[ ! -f "$src" ]]; then
+      continue
+    fi
+
+    local src_hash
+    src_hash="sha256:$(compute_sha256 "$src")"
+
+    if [[ ! -f "$dst" ]]; then
+      # New file from template.
+      mkdir -p "$(dirname "$dst")"
+      cp "$src" "$dst"
+      update_checksum "$config_file" "$rel_path" "$src_hash"
+      echo "ADDED: $rel_path"
+      added=$((added + 1))
+      continue
+    fi
+
+    local dst_hash
+    dst_hash="sha256:$(compute_sha256 "$dst")"
+    local stored_hash
+    stored_hash="$(read_checksum "$config_file" "$rel_path")"
+
+    # If source hasn't changed from what's stored, nothing to do.
+    if [[ "$src_hash" == "$stored_hash" && "$dst_hash" == "$stored_hash" ]]; then
+      continue
+    fi
+
+    # If destination matches stored hash, it hasn't been locally modified → safe to update.
+    if [[ "$dst_hash" == "$stored_hash" || "$force" == true ]]; then
+      cp "$src" "$dst"
+      update_checksum "$config_file" "$rel_path" "$src_hash"
+      echo "UPDATED: $rel_path"
+      updated=$((updated + 1))
+    else
+      echo "SKIPPED: $rel_path (locally modified, use --force to overwrite)."
+      skipped=$((skipped + 1))
+    fi
+  done <<< "$expected_files"
+
+  if [[ $updated -eq 0 && $added -eq 0 && $skipped -eq 0 ]]; then
+    echo "All managed files are up to date."
+  else
+    echo ""
+    echo "Sync complete: $updated updated, $added added, $skipped skipped."
+  fi
+}
+
 # --- Main dispatcher ---
 
 usage() {
