@@ -23,11 +23,11 @@ compute_sha256() {
 # Discover all profiles by scanning template/docs/ for files with --.
 # Outputs one profile name per line, sorted and unique.
 discover_profiles() {
-  local profile
+  local profile base_name
   for file in "$TEMPLATE_DIR"/docs/*--*.md; do
     [[ -f "$file" ]] || continue
-    basename="$(basename "$file" .md)"
-    profile="${basename##*--}"
+    base_name="$(basename "$file" .md)"
+    profile="${base_name##*--}"
     echo "$profile"
   done | sort -u
 }
@@ -142,6 +142,10 @@ cmd_init() {
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --profile)
+        if [[ $# -lt 2 ]]; then
+          echo "ERROR: --profile requires a value." >&2
+          exit 1
+        fi
         shift
         profiles+=("$1")
         ;;
@@ -204,6 +208,19 @@ cmd_init() {
         done
       fi
     fi
+  fi
+
+  # Validate requested profiles exist.
+  if [[ ${#profiles[@]} -gt 0 ]]; then
+    local available
+    available="$(discover_profiles)"
+    for profile in "${profiles[@]}"; do
+      if ! echo "$available" | grep -qx "$profile"; then
+        echo "ERROR: Profile '$profile' not found." >&2
+        echo "Available profiles: $(echo "$available" | tr '\n' ', ' | sed 's/,$//')" >&2
+        exit 1
+      fi
+    done
   fi
 
   # Build comma-separated profile string.
@@ -273,7 +290,7 @@ update_checksum() {
     # Use a temp file for portability (sed -i differs across platforms).
     local tmp
     tmp="$(mktemp)"
-    sed "s|^checksum:${rel_path}=.*|checksum:${rel_path}=${new_hash}|" \
+    sed "s|^checksum:${escaped_path}=.*|checksum:${rel_path}=${new_hash}|" \
       "$config_file" > "$tmp"
     mv "$tmp" "$config_file"
   else
@@ -534,10 +551,12 @@ cmd_remove_profile() {
       echo "REMOVED: $rel_path"
       removed=$((removed + 1))
     fi
-    # Remove checksum line.
+    # Remove checksum line (escape dots/special chars for grep).
+    local escaped_path
+    escaped_path="$(printf '%s' "$rel_path" | sed 's/[.[\*^$()+?{|]/\\&/g')"
     local tmp
     tmp="$(mktemp)"
-    grep -v "^checksum:${rel_path}=" "$config_file" > "$tmp" || true
+    grep -v "^checksum:${escaped_path}=" "$config_file" > "$tmp" || true
     mv "$tmp" "$config_file"
   done <<< "$files_to_remove"
 
