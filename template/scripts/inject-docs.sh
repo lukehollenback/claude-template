@@ -17,8 +17,9 @@ INPUT="$(cat)"
 
 # Extract hook_event_name and tool_name from JSON.
 # Uses grep -o + sed. Handles missing fields gracefully.
-HOOK_EVENT="$(echo "$INPUT" | grep -o '"hook_event_name"\s*:\s*"[^"]*"' | sed 's/.*:.*"\([^"]*\)"/\1/' || true)"
-TOOL_NAME="$(echo "$INPUT" | grep -o '"tool_name"\s*:\s*"[^"]*"' | sed 's/.*:.*"\([^"]*\)"/\1/' || true)"
+# Note: use [[:space:]] instead of \s for BSD grep/sed compatibility (macOS).
+HOOK_EVENT="$(echo "$INPUT" | grep -o '"hook_event_name"[[:space:]]*:[[:space:]]*"[^"]*"' | sed 's/.*:.*"\([^"]*\)"/\1/' || true)"
+TOOL_NAME="$(echo "$INPUT" | grep -o '"tool_name"[[:space:]]*:[[:space:]]*"[^"]*"' | sed 's/.*:.*"\([^"]*\)"/\1/' || true)"
 
 # No event means nothing to match.
 if [[ -z "$HOOK_EVENT" ]]; then
@@ -44,7 +45,7 @@ for file in "$DOCS_DIR"/*.md; do
 
   while IFS= read -r line; do
     # New rule starts with "- event:".
-    if echo "$line" | grep -q '^\s*- event:'; then
+    if echo "$line" | grep -q '^[[:space:]]*- event:'; then
       # Check previous rule before starting new one.
       if [[ -n "$current_event" && "$current_event" == "$HOOK_EVENT" ]]; then
         if [[ -z "$current_matcher" ]] || echo "$TOOL_NAME" | grep -qE "$current_matcher"; then
@@ -52,10 +53,10 @@ for file in "$DOCS_DIR"/*.md; do
           break
         fi
       fi
-      current_event="$(echo "$line" | sed 's/.*event:\s*//' | tr -d ' "'"'")"
+      current_event="$(echo "$line" | sed 's/.*event:[[:space:]]*//' | tr -d ' "'"'")"
       current_matcher=""
-    elif echo "$line" | grep -q '^\s*matcher:'; then
-      current_matcher="$(echo "$line" | sed 's/.*matcher:\s*//' | tr -d '"'"'")"
+    elif echo "$line" | grep -q '^[[:space:]]*matcher:'; then
+      current_matcher="$(echo "$line" | sed 's/.*matcher:[[:space:]]*//' | tr -d '"'"'")"
     fi
   done <<< "$frontmatter"
 
