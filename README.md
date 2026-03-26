@@ -22,6 +22,7 @@ git clone https://github.com/lukehollenback/claude-template.git
 ```
 
 ### Step 3: Later, sync updates from the template.
+```bash
 ./claude-template/claude-template.sh sync ~/my-project
 ```
 
