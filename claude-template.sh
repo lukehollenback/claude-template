@@ -397,6 +397,162 @@ cmd_sync() {
   fi
 }
 
+cmd_add_profile() {
+  local profile="${1:-}"
+  local target_dir="${2:-.}"
+
+  if [[ -z "$profile" ]]; then
+    echo "Usage: claude-template add-profile <profile> [<target-dir>]" >&2
+    exit 1
+  fi
+
+  local config_file="$target_dir/.claude-template"
+  if [[ ! -f "$config_file" ]]; then
+    echo "ERROR: No .claude-template found in $target_dir." >&2
+    exit 1
+  fi
+
+  # Resolve template.
+  local template_repo
+  template_repo="$(resolve_template_repo "$target_dir")"
+  local tmpl_dir="$template_repo/template"
+
+  # Validate profile exists.
+  local available
+  available="$(TEMPLATE_DIR="$tmpl_dir" discover_profiles)"
+  if ! echo "$available" | grep -qx "$profile"; then
+    echo "ERROR: Profile '$profile' not found." >&2
+    echo "Available profiles: $(echo "$available" | tr '\n' ', ' | sed 's/,$//')" >&2
+    exit 1
+  fi
+
+  # Check not already active.
+  local current
+  current="$(read_config "$config_file" "profiles")"
+  if echo ",$current," | grep -q ",$profile,"; then
+    echo "ERROR: Profile '$profile' is already active." >&2
+    exit 1
+  fi
+
+  # Copy profile files.
+  local copied=0
+  while IFS= read -r rel_path; do
+    [[ -n "$rel_path" ]] || continue
+    local src="$tmpl_dir/$rel_path"
+    local dst="$target_dir/$rel_path"
+    mkdir -p "$(dirname "$dst")"
+    cp "$src" "$dst"
+    local hash
+    hash="sha256:$(compute_sha256 "$dst")"
+    update_checksum "$config_file" "$rel_path" "$hash"
+    echo "ADDED: $rel_path"
+    copied=$((copied + 1))
+  done <<< "$(TEMPLATE_DIR="$tmpl_dir" profile_files "$profile")"
+
+  # Update profiles list.
+  local new_profiles
+  if [[ -n "$current" ]]; then
+    new_profiles="$current,$profile"
+  else
+    new_profiles="$profile"
+  fi
+  local tmp
+  tmp="$(mktemp)"
+  sed "s/^profiles=.*/profiles=$new_profiles/" "$config_file" > "$tmp"
+  mv "$tmp" "$config_file"
+
+  echo "Added profile '$profile' ($copied files)."
+}
+
+cmd_remove_profile() {
+  local profile=""
+  local target_dir="."
+  local skip_confirm=false
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --yes) skip_confirm=true ;;
+      -*) echo "Unknown option: $1" >&2; exit 1 ;;
+      *)
+        if [[ -z "$profile" ]]; then
+          profile="$1"
+        else
+          target_dir="$1"
+        fi
+        ;;
+    esac
+    shift
+  done
+
+  if [[ -z "$profile" ]]; then
+    echo "Usage: claude-template remove-profile <profile> [<target-dir>] [--yes]" >&2
+    exit 1
+  fi
+
+  local config_file="$target_dir/.claude-template"
+  if [[ ! -f "$config_file" ]]; then
+    echo "ERROR: No .claude-template found in $target_dir." >&2
+    exit 1
+  fi
+
+  # Verify profile is active.
+  local current
+  current="$(read_config "$config_file" "profiles")"
+  if ! echo ",$current," | grep -q ",$profile,"; then
+    echo "ERROR: Profile '$profile' is not active." >&2
+    exit 1
+  fi
+
+  # Resolve template.
+  local template_repo
+  template_repo="$(resolve_template_repo "$target_dir")"
+  local tmpl_dir="$template_repo/template"
+
+  # List files that will be removed.
+  local files_to_remove
+  files_to_remove="$(TEMPLATE_DIR="$tmpl_dir" profile_files "$profile")"
+
+  if [[ "$skip_confirm" == false ]]; then
+    echo "Will remove these files:"
+    echo "$files_to_remove" | while IFS= read -r f; do echo "  - $f"; done
+    echo ""
+    echo "Continue? [y/N]"
+    read -r answer
+    if [[ "$answer" != "y" && "$answer" != "Y" ]]; then
+      echo "Aborted."
+      exit 0
+    fi
+  fi
+
+  # Remove files and checksums.
+  local removed=0
+  while IFS= read -r rel_path; do
+    [[ -n "$rel_path" ]] || continue
+    local dst="$target_dir/$rel_path"
+    if [[ -f "$dst" ]]; then
+      rm "$dst"
+      echo "REMOVED: $rel_path"
+      removed=$((removed + 1))
+    fi
+    # Remove checksum line.
+    local tmp
+    tmp="$(mktemp)"
+    grep -v "^checksum:${rel_path}=" "$config_file" > "$tmp" || true
+    mv "$tmp" "$config_file"
+  done <<< "$files_to_remove"
+
+  # Update profiles list (remove this profile).
+  local new_profiles
+  new_profiles="$(echo "$current" | tr ',' '\n' | grep -v "^${profile}$" | \
+    tr '\n' ',' | sed 's/,$//')"
+  local tmp
+  tmp="$(mktemp)"
+  sed "s/^profiles=.*/profiles=$new_profiles/" "$config_file" > "$tmp"
+  mv "$tmp" "$config_file"
+
+  echo "Removed profile '$profile' ($removed files)."
+}
+
 # --- Main dispatcher ---
 
 usage() {
