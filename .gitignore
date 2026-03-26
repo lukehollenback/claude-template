@@ -1,0 +1,12 @@
+# OS artifacts.
+.DS_Store
+Thumbs.db
+
+# IDE configs.
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Claude Code local settings (not part of template).
+.claude/settings.local.json
