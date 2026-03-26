@@ -68,6 +68,50 @@ global_files() {
   done
 }
 
+# --- Composite helpers ---
+
+# List all managed files for a set of profiles (comma-separated).
+# Outputs relative paths, one per line.
+managed_files_for_profiles() {
+  local profiles="$1"
+
+  # Always include globals.
+  global_files
+
+  # Include profile-specific files.
+  if [[ -n "$profiles" ]]; then
+    IFS=',' read -ra profile_arr <<< "$profiles"
+    for profile in "${profile_arr[@]}"; do
+      profile_files "$profile"
+    done
+  fi
+}
+
+# Write the .claude-template config file.
+# Args: target_dir, profiles (comma-separated).
+write_config() {
+  local target_dir="$1" profiles="$2"
+  local config_file="$target_dir/.claude-template"
+
+  cat > "$config_file" <<EOF
+# Managed by claude-template. Do not edit checksums manually.
+template_repo=$REPO_ROOT
+profiles=$profiles
+
+# Checksums of managed files (used for conflict detection on sync).
+EOF
+
+  # Add checksums for all managed files.
+  while IFS= read -r rel_path; do
+    local full_path="$target_dir/$rel_path"
+    if [[ -f "$full_path" ]]; then
+      local hash
+      hash="$(compute_sha256 "$full_path")"
+      echo "checksum:${rel_path}=sha256:${hash}" >> "$config_file"
+    fi
+  done <<< "$(managed_files_for_profiles "$profiles")"
+}
+
 # --- Commands ---
 
 cmd_list_profiles() {
@@ -87,6 +131,117 @@ cmd_list_profiles() {
       echo "    - $f"
     done
   done <<< "$profiles"
+}
+
+cmd_init() {
+  local target_dir=""
+  local profiles=()
+  local no_profiles=false
+
+  # Parse arguments.
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --profile)
+        shift
+        profiles+=("$1")
+        ;;
+      --no-profiles)
+        no_profiles=true
+        ;;
+      -*)
+        echo "Unknown option: $1" >&2
+        exit 1
+        ;;
+      *)
+        if [[ -z "$target_dir" ]]; then
+          target_dir="$1"
+        else
+          echo "Unexpected argument: $1" >&2
+          exit 1
+        fi
+        ;;
+    esac
+    shift
+  done
+
+  if [[ -z "$target_dir" ]]; then
+    echo "Usage: claude-template init <target-dir> [--profile <name>...]" >&2
+    exit 1
+  fi
+
+  # Refuse to overwrite existing project.
+  if [[ -f "$target_dir/.claude-template" ]]; then
+    echo "ERROR: $target_dir already exists as a claude-template project." >&2
+    echo "Use 'claude-template sync' to update it." >&2
+    exit 1
+  fi
+
+  # Interactive profile selection if no --profile and no --no-profiles.
+  if [[ ${#profiles[@]} -eq 0 && "$no_profiles" == false ]]; then
+    local available
+    available="$(discover_profiles)"
+    if [[ -n "$available" ]]; then
+      echo "Available profiles:"
+      local i=1
+      while IFS= read -r p; do
+        echo "  $i) $p"
+        i=$((i + 1))
+      done <<< "$available"
+      echo ""
+      echo "Enter profile numbers (comma-separated), or press Enter for none:"
+      read -r selection
+      if [[ -n "$selection" ]]; then
+        IFS=',' read -ra nums <<< "$selection"
+        local profile_list
+        profile_list="$(echo "$available" | head -n 999)"
+        for num in "${nums[@]}"; do
+          num="$(echo "$num" | tr -d ' ')"
+          local selected
+          selected="$(echo "$profile_list" | sed -n "${num}p")"
+          if [[ -n "$selected" ]]; then
+            profiles+=("$selected")
+          fi
+        done
+      fi
+    fi
+  fi
+
+  # Build comma-separated profile string.
+  local profiles_csv=""
+  if [[ ${#profiles[@]} -gt 0 ]]; then
+    profiles_csv="$(IFS=','; echo "${profiles[*]}")"
+  fi
+
+  # Create directory structure.
+  mkdir -p "$target_dir/.claude" "$target_dir/docs/specs" "$target_dir/scripts"
+
+  # Copy global files.
+  while IFS= read -r rel_path; do
+    local src="$TEMPLATE_DIR/$rel_path"
+    local dst="$target_dir/$rel_path"
+    mkdir -p "$(dirname "$dst")"
+    cp "$src" "$dst"
+  done <<< "$(global_files)"
+
+  # Copy .gitkeep for specs.
+  if [[ -f "$TEMPLATE_DIR/docs/specs/.gitkeep" ]]; then
+    cp "$TEMPLATE_DIR/docs/specs/.gitkeep" "$target_dir/docs/specs/.gitkeep"
+  fi
+
+  # Copy profile files.
+  for profile in "${profiles[@]}"; do
+    while IFS= read -r rel_path; do
+      local src="$TEMPLATE_DIR/$rel_path"
+      local dst="$target_dir/$rel_path"
+      mkdir -p "$(dirname "$dst")"
+      cp "$src" "$dst"
+    done <<< "$(profile_files "$profile")"
+  done
+
+  # Write config.
+  write_config "$target_dir" "$profiles_csv"
+
+  echo "Initialized $target_dir with profiles: ${profiles_csv:-none}."
 }
 
 # --- Main dispatcher ---
