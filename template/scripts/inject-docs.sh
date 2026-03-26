@@ -31,7 +31,8 @@ for file in "$DOCS_DIR"/*.md; do
   [[ -f "$file" ]] || continue
 
   # Extract frontmatter (between first --- and second ---).
-  frontmatter="$(sed -n '1{/^---$/!q}; 1,/^---$/p' "$file")"
+  # Use awk for portability (BSD sed doesn't support q with trailing commands).
+  frontmatter="$(awk 'NR==1 && !/^---$/{exit} NR>1 && /^---$/{print;exit} {print}' "$file")"
   [[ -n "$frontmatter" ]] || continue
 
   # Check if frontmatter contains any inject rules.
