@@ -3,18 +3,25 @@
 [![Tests](https://github.com/lukehollenback/claude-template/actions/workflows/tests.yml/badge.svg)](https://github.com/lukehollenback/claude-template/actions/workflows/tests.yml)
 
 A tool for initializing and syncing [Claude Code](https://claude.ai/claude-code) project
-directories from a shared template. Supports selective file inclusion via a profile system.
+directories with a spec-driven development system. Supports selective file inclusion via
+a profile system.
 
 ## Quick Start
 
+
+### Step 1: Clone this repository.
+
 ```bash
-# Clone the template repo.
 git clone https://github.com/lukehollenback/claude-template.git
+```
 
-# Initialize a new project with the typescript profile.
+### Step 2: Initialize a new project with the TypeScript profile.
+
+```bash
 ./claude-template/claude-template.sh init ~/my-project --profile typescript
+```
 
-# Later, sync updates from the template.
+### Step 3: Later, sync updates from the template.
 ./claude-template/claude-template.sh sync ~/my-project
 ```
 
@@ -81,17 +88,10 @@ Show available profiles and which files they include.
 
 Files in `template/docs/` use a double-hyphen (`--`) naming convention:
 
-- `FILENAME.md` → **global**, always included in every project.
-- `FILENAME--<profile>.md` → included only when `<profile>` is active.
+- `FILENAME.md` → **Global** and always included in every project.
+- `FILENAME--<profile>.md` → Included only when `<profile>` is active.
 
-Files outside `template/docs/` (`.claude/`, `scripts/`) are always global.
-
-### Current Profiles
-
-| Profile | Files | Description |
-|---------|-------|-------------|
-| `typescript` | `CODING_STANDARDS--typescript.md` | TypeScript naming, formatting, and component patterns. |
-| `glassmorphism` | `DESIGN-STANDARDS--glassmorphism.md` | Glassmorphism design system with tokens and component specs. |
+Files outside `template/docs/` (e.g., `.claude/`, `scripts/`) are always global.
 
 ## Template Repo Resolution
 
@@ -106,10 +106,6 @@ this order:
 
 On `sync`, the tool compares SHA-256 checksums to detect locally modified files:
 
-- **Unmodified** → safe to overwrite with the latest template version.
-- **Modified** → skipped with a warning. Use `--force` to overwrite anyway.
-- **New in template** → automatically copied into the project.
-
-## License
-
-Apache 2.0. See [LICENSE](LICENSE).
+- **Unmodified** → Safe to overwrite with the latest template version.
+- **Modified** → Skipped with a warning. Use `--force` to overwrite anyway.
+- **New in template** → Automatically copied into the project.
