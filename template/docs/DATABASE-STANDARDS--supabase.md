@@ -1,5 +1,5 @@
 ---
-description: Supabase production-safety rules — branch confirmation, migration discipline, type regeneration. Read before any Supabase MCP call.
+description: Supabase production-safety rules — branch confirmation, migration discipline, type regeneration. Read before any Supabase MCP call, schema update, or operation.
 inject:
   - event: SessionStart
   - event: PreCompact
@@ -21,6 +21,8 @@ The `main` branch of the Supabase project IS production. It backs the live `main
 - If the user says "the deployed site is broken" or "Turner hit an error on dev preview," that is NOT permission to touch `main`. Those situations almost certainly mean the `dev` branch needs the change, not `main`.
 - Before any DDL: state the branch name and the project ref you intend to target, and ask for confirmation. Wait for a clear "yes" in the chat.
 - Data-modifying DML against `main` follows the same rule.
+
+Extrapolated out, never touch any Supabase branch that does not have the exact same name as the current working code branch without explicit permission.
 
 ## 2. ALWAYS CONFIRM WHICH BRANCH YOU ARE ON BEFORE ANY SUPABASE CALL
 
