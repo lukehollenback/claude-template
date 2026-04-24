@@ -27,6 +27,8 @@ echo "# Local modification" >> "$TARGET/docs/CODING_STANDARDS.md"
 output="$("$TOOL" sync "$TARGET" 2>&1)"
 assert_contains "sync warns about modified file" "SKIPPED" "$output"
 assert_contains "sync mentions the file" "CODING_STANDARDS.md" "$output"
+assert_contains "sync prints upstream diff for skipped file" "Upstream diff" "$output"
+assert_contains "sync diff includes the local change" "# Local modification" "$output"
 
 # Test: sync --force overwrites modified file.
 "$TOOL" sync "$TARGET" --force 2>&1

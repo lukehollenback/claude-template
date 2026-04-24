@@ -409,6 +409,13 @@ cmd_sync() {
       updated=$((updated + 1))
     else
       echo "SKIPPED: $rel_path (locally modified, use --force to overwrite)."
+      # Show the upstream diff so the user can hand-merge.
+      local diff_output
+      diff_output="$(diff -u "$dst" "$src" 2>/dev/null || true)"
+      if [[ -n "$diff_output" ]]; then
+        echo "  Upstream diff (- local, + template):"
+        echo "$diff_output" | sed 's/^/    /'
+      fi
       skipped=$((skipped + 1))
     fi
   done <<< "$expected_files"
