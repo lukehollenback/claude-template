@@ -51,6 +51,27 @@ output="$(echo '{"hook_event_name": "PreCompact"}' | bash "$INJECT")"
 assert_contains "PreCompact includes CODING_STANDARDS" "Coding Standards" "$output"
 assert_contains "PreCompact includes RULES" "Non-negotiable development rules" "$output"
 
+# Test: SessionStart includes Supabase standards (rule has no matcher → fires on event alone).
+output="$(echo '{"hook_event_name": "SessionStart"}' | bash "$INJECT")"
+assert_contains "SessionStart includes Supabase standards" "Supabase Standards" "$output"
+
+# Test: PreToolUse with a Supabase MCP tool name outputs Supabase standards.
+output="$(echo '{"hook_event_name": "PreToolUse", "tool_name": "mcp__plugin_supabase_supabase__apply_migration"}' | bash "$INJECT")"
+assert_contains "PreToolUse+Supabase MCP includes Supabase standards" \
+  "Supabase Standards" "$output"
+
+# Test: PreToolUse with Edit tool does NOT include Supabase standards (matcher is MCP-only).
+output="$(echo '{"hook_event_name": "PreToolUse", "tool_name": "Edit"}' | bash "$INJECT")"
+if echo "$output" | grep -qF "Supabase Standards"; then
+  TESTS_RUN=$((TESTS_RUN + 1))
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+  echo "  FAIL: PreToolUse+Edit should not include Supabase standards"
+else
+  TESTS_RUN=$((TESTS_RUN + 1))
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+  echo "  PASS: PreToolUse+Edit does not include Supabase standards"
+fi
+
 # Test: empty input produces no output and exits cleanly.
 output="$(echo '{}' | bash "$INJECT")"
 assert_equals "empty event produces no output" "" "$output"
