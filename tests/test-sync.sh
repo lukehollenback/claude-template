@@ -18,17 +18,19 @@ TARGET="$TEST_TMP/project"
 original_checksum="$(grep 'checksum:docs/CODING_STANDARDS.md' \
   "$TARGET/.claude-template" | cut -d= -f2-)"
 
-# Test: sync with no changes is a no-op.
+# Test: sync with no changes lists every file as in sync.
 output="$("$TOOL" sync "$TARGET" 2>&1)"
-assert_contains "sync reports up to date" "up to date" "$output"
+assert_contains "sync reports per-file in-sync status" "UNCHANGED (in sync)" "$output"
+assert_contains "sync summary mentions in-sync count" "unchanged (in sync)" "$output"
 
-# Test: sync detects locally modified file and skips it.
+# Test: sync detects locally modified file and keeps it.
 echo "# Local modification" >> "$TARGET/docs/CODING_STANDARDS.md"
 output="$("$TOOL" sync "$TARGET" 2>&1)"
-assert_contains "sync warns about modified file" "SKIPPED" "$output"
+assert_contains "sync marks modified file as kept local" "UNCHANGED (kept local)" "$output"
 assert_contains "sync mentions the file" "CODING_STANDARDS.md" "$output"
-assert_contains "sync prints upstream diff for skipped file" "Upstream diff" "$output"
+assert_contains "sync prints upstream diff for kept-local file" "Upstream diff" "$output"
 assert_contains "sync diff includes the local change" "# Local modification" "$output"
+assert_contains "sync summary mentions kept-local count" "unchanged (kept local)" "$output"
 
 # Test: sync --force overwrites modified file.
 "$TOOL" sync "$TARGET" --force 2>&1
@@ -55,7 +57,7 @@ mv "$tmp_config" "$TARGET/.claude-template"
 # Test: sync without target-dir uses current directory.
 cd "$TARGET"
 output="$("$TOOL" sync 2>&1)"
-assert_contains "sync works from current dir" "up to date" "$output"
+assert_contains "sync works from current dir" "Sync complete" "$output"
 cd "$SCRIPT_DIR"
 
 print_results

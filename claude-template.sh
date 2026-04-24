@@ -361,9 +361,10 @@ cmd_sync() {
   local profiles
   profiles="$(read_config "$config_file" "profiles")"
 
-  local skipped=0
+  local kept_local=0
   local updated=0
   local added=0
+  local in_sync=0
 
   # Build list of expected managed files.
   local expected_files
@@ -398,6 +399,8 @@ cmd_sync() {
 
     # If source hasn't changed from what's stored, nothing to do.
     if [[ "$src_hash" == "$stored_hash" && "$dst_hash" == "$stored_hash" ]]; then
+      echo "UNCHANGED (in sync): $rel_path"
+      in_sync=$((in_sync + 1))
       continue
     fi
 
@@ -408,7 +411,7 @@ cmd_sync() {
       echo "UPDATED: $rel_path"
       updated=$((updated + 1))
     else
-      echo "SKIPPED: $rel_path (locally modified, use --force to overwrite)."
+      echo "UNCHANGED (kept local): $rel_path (locally modified, use --force to overwrite)."
       # Show the upstream diff so the user can hand-merge.
       local diff_output
       diff_output="$(diff -u "$dst" "$src" 2>/dev/null || true)"
@@ -416,16 +419,12 @@ cmd_sync() {
         echo "  Upstream diff (- local, + template):"
         echo "$diff_output" | sed 's/^/    /'
       fi
-      skipped=$((skipped + 1))
+      kept_local=$((kept_local + 1))
     fi
   done <<< "$expected_files"
 
-  if [[ $updated -eq 0 && $added -eq 0 && $skipped -eq 0 ]]; then
-    echo "All managed files are up to date."
-  else
-    echo ""
-    echo "Sync complete: $updated updated, $added added, $skipped skipped."
-  fi
+  echo ""
+  echo "Sync complete: $updated updated, $added added, $in_sync unchanged (in sync), $kept_local unchanged (kept local)."
 }
 
 cmd_add_profile() {
