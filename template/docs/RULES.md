@@ -1,4 +1,5 @@
 ---
+description: Non-negotiable development rules for this project. Violating them creates compounding problems — read before any non-trivial work.
 inject:
   - event: SessionStart
   - event: PreCompact

@@ -9,74 +9,129 @@ echo "=== inject-docs ==="
 # Use the template's inject-docs.sh directly.
 INJECT="$SCRIPT_DIR/../template/scripts/inject-docs.sh"
 
-# Test: SessionStart event outputs global docs (CODING_STANDARDS, RULES).
+# Helper: assert a TOC line for the given doc has (or lacks) the [injected below] marker.
+assert_injected() {
+  local desc="$1" doc="$2" output="$3"
+  local line
+  line="$(echo "$output" | grep -F "\`$doc\`" || true)"
+  TESTS_RUN=$((TESTS_RUN + 1))
+  if [[ -n "$line" && "$line" == *"[injected below]"* ]]; then
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+    echo "  PASS: $desc"
+  else
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+    echo "  FAIL: $desc"
+    echo "    TOC line: $line"
+  fi
+}
+
+assert_not_injected() {
+  local desc="$1" doc="$2" output="$3"
+  local line
+  line="$(echo "$output" | grep -F "\`$doc\`" || true)"
+  TESTS_RUN=$((TESTS_RUN + 1))
+  if [[ -n "$line" && "$line" != *"[injected below]"* ]]; then
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+    echo "  PASS: $desc"
+  else
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+    echo "  FAIL: $desc"
+    echo "    TOC line: $line"
+  fi
+}
+
+# --- TOC shape ---
+
+# Test: TOC header always present.
 output="$(echo '{"hook_event_name": "SessionStart"}' | bash "$INJECT")"
-assert_contains "SessionStart includes CODING_STANDARDS" "Coding Standards" "$output"
-assert_contains "SessionStart includes RULES" "Non-negotiable development rules" "$output"
+assert_contains "TOC header present" "# Project Docs" "$output"
 
-# Test: SessionStart does NOT output TypeScript standards (requires PreToolUse + matcher).
-if echo "$output" | grep -qF "TypeScript Coding Standards"; then
-  TESTS_RUN=$((TESTS_RUN + 1))
-  TESTS_FAILED=$((TESTS_FAILED + 1))
-  echo "  FAIL: SessionStart should not include TypeScript standards"
-else
-  TESTS_RUN=$((TESTS_RUN + 1))
-  TESTS_PASSED=$((TESTS_PASSED + 1))
-  echo "  PASS: SessionStart does not include TypeScript standards"
-fi
+# Test: TOC lists every doc in docs/, even ones that don't match this event.
+assert_contains "TOC lists CODING_STANDARDS" "\`docs/CODING_STANDARDS.md\`" "$output"
+assert_contains "TOC lists RULES" "\`docs/RULES.md\`" "$output"
+assert_contains "TOC lists TypeScript standards" "\`docs/CODING_STANDARDS--typescript.md\`" "$output"
+assert_contains "TOC lists glassmorphism standards" "\`docs/DESIGN-STANDARDS--glassmorphism.md\`" "$output"
+assert_contains "TOC lists Supabase standards" "\`docs/DATABASE-STANDARDS--supabase.md\`" "$output"
 
-# Test: PreToolUse with Edit tool outputs TypeScript standards.
+# Test: TOC includes descriptions from frontmatter.
+assert_contains "TOC includes RULES description" \
+  "Non-negotiable development rules for this project" "$output"
+assert_contains "TOC includes TypeScript description" \
+  "TypeScript and TSX-specific conventions" "$output"
+
+# --- SessionStart injection ---
+
+# CODING_STANDARDS and RULES inject on SessionStart; others don't.
+assert_injected "SessionStart injects CODING_STANDARDS" "docs/CODING_STANDARDS.md" "$output"
+assert_injected "SessionStart injects RULES" "docs/RULES.md" "$output"
+assert_injected "SessionStart injects Supabase standards" "docs/DATABASE-STANDARDS--supabase.md" "$output"
+assert_not_injected "SessionStart does not inject TypeScript standards" \
+  "docs/CODING_STANDARDS--typescript.md" "$output"
+assert_not_injected "SessionStart does not inject glassmorphism" \
+  "docs/DESIGN-STANDARDS--glassmorphism.md" "$output"
+
+# Body content of injected docs is present below the TOC.
+assert_contains "SessionStart body includes CODING_STANDARDS heading" \
+  "# Coding Standards" "$output"
+assert_contains "SessionStart body includes RULES heading" "# Rules" "$output"
+
+# --- PreToolUse + Edit ---
+
 output="$(echo '{"hook_event_name": "PreToolUse", "tool_name": "Edit"}' | bash "$INJECT")"
-assert_contains "PreToolUse+Edit includes TypeScript standards" \
-  "TypeScript Coding Standards" "$output"
+assert_injected "PreToolUse+Edit injects TypeScript standards" \
+  "docs/CODING_STANDARDS--typescript.md" "$output"
+assert_injected "PreToolUse+Edit injects glassmorphism" \
+  "docs/DESIGN-STANDARDS--glassmorphism.md" "$output"
+assert_not_injected "PreToolUse+Edit does not inject CODING_STANDARDS" \
+  "docs/CODING_STANDARDS.md" "$output"
+assert_not_injected "PreToolUse+Edit does not inject Supabase standards" \
+  "docs/DATABASE-STANDARDS--supabase.md" "$output"
 
-# Test: PreToolUse with Edit tool also outputs design standards (glassmorphism).
-assert_contains "PreToolUse+Edit includes design standards" \
-  "Glassmorphism design system" "$output"
+# Body of injected doc is present.
+assert_contains "PreToolUse+Edit body includes TS heading" \
+  "# TypeScript Coding Standards" "$output"
 
-# Test: PreToolUse with a non-matching tool outputs nothing from matcher-guarded docs.
+# --- PreToolUse + Read (no matches) ---
+
 output="$(echo '{"hook_event_name": "PreToolUse", "tool_name": "Read"}' | bash "$INJECT")"
-if echo "$output" | grep -qF "TypeScript Coding Standards"; then
+# TOC still emits, but nothing should be marked injected.
+assert_contains "PreToolUse+Read still emits TOC" "# Project Docs" "$output"
+assert_not_injected "PreToolUse+Read does not inject TypeScript standards" \
+  "docs/CODING_STANDARDS--typescript.md" "$output"
+assert_not_injected "PreToolUse+Read does not inject glassmorphism" \
+  "docs/DESIGN-STANDARDS--glassmorphism.md" "$output"
+# No body content should follow.
+if echo "$output" | grep -qF "# TypeScript Coding Standards"; then
   TESTS_RUN=$((TESTS_RUN + 1))
   TESTS_FAILED=$((TESTS_FAILED + 1))
-  echo "  FAIL: PreToolUse+Read should not include TypeScript standards"
+  echo "  FAIL: PreToolUse+Read leaked TS body"
 else
   TESTS_RUN=$((TESTS_RUN + 1))
   TESTS_PASSED=$((TESTS_PASSED + 1))
-  echo "  PASS: PreToolUse+Read does not include TypeScript standards"
+  echo "  PASS: PreToolUse+Read does not include TS body"
 fi
 
-# Test: PreCompact event outputs global docs.
+# --- PreCompact ---
+
 output="$(echo '{"hook_event_name": "PreCompact"}' | bash "$INJECT")"
-assert_contains "PreCompact includes CODING_STANDARDS" "Coding Standards" "$output"
-assert_contains "PreCompact includes RULES" "Non-negotiable development rules" "$output"
+assert_injected "PreCompact injects CODING_STANDARDS" "docs/CODING_STANDARDS.md" "$output"
+assert_injected "PreCompact injects RULES" "docs/RULES.md" "$output"
 
-# Test: SessionStart includes Supabase standards (rule has no matcher → fires on event alone).
-output="$(echo '{"hook_event_name": "SessionStart"}' | bash "$INJECT")"
-assert_contains "SessionStart includes Supabase standards" "Supabase Standards" "$output"
+# --- PreToolUse + Supabase MCP ---
 
-# Test: PreToolUse with a Supabase MCP tool name outputs Supabase standards.
 output="$(echo '{"hook_event_name": "PreToolUse", "tool_name": "mcp__plugin_supabase_supabase__apply_migration"}' | bash "$INJECT")"
-assert_contains "PreToolUse+Supabase MCP includes Supabase standards" \
-  "Supabase Standards" "$output"
+assert_injected "Supabase MCP call injects Supabase standards" \
+  "docs/DATABASE-STANDARDS--supabase.md" "$output"
+assert_not_injected "Supabase MCP call does not inject TypeScript standards" \
+  "docs/CODING_STANDARDS--typescript.md" "$output"
 
-# Test: PreToolUse with Edit tool does NOT include Supabase standards (matcher is MCP-only).
-output="$(echo '{"hook_event_name": "PreToolUse", "tool_name": "Edit"}' | bash "$INJECT")"
-if echo "$output" | grep -qF "Supabase Standards"; then
-  TESTS_RUN=$((TESTS_RUN + 1))
-  TESTS_FAILED=$((TESTS_FAILED + 1))
-  echo "  FAIL: PreToolUse+Edit should not include Supabase standards"
-else
-  TESTS_RUN=$((TESTS_RUN + 1))
-  TESTS_PASSED=$((TESTS_PASSED + 1))
-  echo "  PASS: PreToolUse+Edit does not include Supabase standards"
-fi
+# --- Edge cases ---
 
-# Test: empty input produces no output and exits cleanly.
+# Empty event JSON → no output.
 output="$(echo '{}' | bash "$INJECT")"
 assert_equals "empty event produces no output" "" "$output"
 
-# Test: no input produces no output and exits cleanly.
+# Empty stdin → no output.
 output="$(echo '' | bash "$INJECT")"
 assert_equals "no input produces no output" "" "$output"
 

@@ -1,4 +1,5 @@
 ---
+description: TypeScript and TSX-specific conventions (formatting, types, imports). Read before editing any .ts or .tsx file.
 inject:
   - event: PreToolUse
     matcher: "Edit|Write|NotebookEdit"

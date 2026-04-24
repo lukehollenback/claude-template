@@ -1,4 +1,5 @@
 ---
+description: Supabase production-safety rules — branch confirmation, migration discipline, type regeneration. Read before any Supabase MCP call.
 inject:
   - event: SessionStart
   - event: PreCompact

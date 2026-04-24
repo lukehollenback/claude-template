@@ -1,4 +1,5 @@
 ---
+description: Language-agnostic coding standards (naming, structure, comments). Read before writing or modifying any source file.
 inject:
   - event: SessionStart
   - event: PreCompact

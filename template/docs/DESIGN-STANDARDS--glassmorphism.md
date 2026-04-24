@@ -1,4 +1,5 @@
 ---
+description: Glassmorphism design system — design tokens, surfaces, blur, shadows, focus states. Read before any UI/visual change.
 inject:
   - event: PreToolUse
     matcher: "Edit|Write|NotebookEdit"
